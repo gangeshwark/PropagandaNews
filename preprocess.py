@@ -1,4 +1,9 @@
 import io
+from pprint import pprint
+
+from keras.utils import to_categorical
+from keras_preprocessing.sequence import pad_sequences
+from keras_preprocessing.text import Tokenizer
 
 train_folder = "datasets/train-articles"  # check that the path to the datasets folder is correct,
 dev_folder = "datasets/dev-articles"  # if not adjust these variables accordingly
@@ -21,7 +26,8 @@ import os.path
 import numpy as np
 
 gloveDir = ""
-MAX_SEQUENCE_LENGTH = 100
+MAX_NB_WORDS = 100000
+MAX_SEQUENCE_LENGTH = 140
 EMBEDDING_DIM = 300  # The dimension of the word embeddings
 BATCH_SIZE = 200  # The batch size to be chosen for training the model.
 LSTM_DIM = 300  # The dimension of the representations learnt by the LSTM model
@@ -107,18 +113,33 @@ def read_predictions_from_file(filename):
     return articles_id, span_starts, span_ends, gold_labels
 
 
+def clean_text(text):
+    # text = text.replace('\'', '')
+    text = text.replace('‘', ' \' ')
+    text = text.replace('’', ' \' ')
+    text = text.replace('“', ' \" ')
+    text = text.replace('”', ' \" ')
+
+    text = text.replace('"', ' " ')
+    text = text.replace('\'', ' \' ')
+    return text
+
+
 def compute_features(articles, ref_articles_id, span_starts, span_ends):
     # only one feature, the length of the span
     # data =
     print(type(span_starts), len(span_starts))
     print(type(span_ends), len(span_ends))
     data = []
+    article_spans = []
     for i, ref_id in enumerate(ref_articles_id):
         # print(articles[ref_id], span_starts[i], span_ends[i])
         article = articles[ref_id]
-        article_span = article[int(span_starts[i]):int(span_ends[i])]
-        data.append([article_span, ])
-    return
+        article_span = clean_text(article[int(span_starts[i]):int(span_ends[i])])
+        data.append([article_span])
+        article_spans.append(article_span)
+    print(article_spans)
+    return article_spans
 
 
 def preprocess():
@@ -129,12 +150,46 @@ def preprocess():
 
 # loading articles' content from *.txt files in the train folder
 articles = read_articles_from_file_list(train_folder)
+dev_articles = read_articles_from_file_list(dev_folder)
+
+# computing the predictions on the development set
 # print(articles['111111111'])
 # exit()
 
 # loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder
 ref_articles_id, ref_span_starts, ref_span_ends, train_gold_labels = read_predictions_from_file(train_labels_file)
+dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
 print("Loaded %d annotations from %d articles" % (len(ref_span_starts), len(set(ref_articles_id))))
 
 # compute one feature for each fragment, i.e. the length of the fragment, and train the model
-train = compute_features(articles, ref_articles_id, ref_span_starts, ref_span_ends)
+articles = compute_features(articles, ref_articles_id, ref_span_starts, ref_span_ends)
+dev_articles = compute_features(dev_articles, dev_article_ids, dev_span_starts, dev_span_ends)
+
+print("Extracting tokens...")
+tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
+tokenizer.fit_on_texts(articles + dev_articles)
+articles_id = tokenizer.texts_to_sequences(articles)
+dev_articles_id = tokenizer.texts_to_sequences(dev_articles)
+print(articles_id)
+print(dev_articles_id)
+
+wordIndex = tokenizer.word_index
+print("Found %s unique tokens." % len(wordIndex))
+
+print("Populating embedding matrix...")
+embeddingMatrix = getEmbeddingMatrix(wordIndex)
+
+max_len = 0
+for x in articles_id:
+    if len(x) > max_len:
+        max_len = len(x)
+for x in dev_articles_id:
+    if len(x) > max_len:
+        max_len = len(x)
+
+print(max_len)
+
+articles_id = pad_sequences(articles_id, maxlen=MAX_SEQUENCE_LENGTH)
+dev_articles_id = pad_sequences(dev_articles_id, maxlen=MAX_SEQUENCE_LENGTH)
+# labels = to_categorical(np.asarray(train_gold_labels))
+pprint(set(train_gold_labels))
