@@ -23,8 +23,8 @@ from sklearn.linear_model import LogisticRegression
 
 def read_articles_from_file_list(folder_name, file_pattern="*.txt"):
     """
-    Read articles from files matching patterns <file_pattern> from  
-    the directory <folder_name>. 
+    Read articles from files matching patterns <file_pattern> from
+    the directory <folder_name>.
     The content of the article is saved in the dictionary whose key
     is the id of the article (extracted from the file name).
     Each element of <sentence_list> is one line of the article.
@@ -41,10 +41,10 @@ def read_articles_from_file_list(folder_name, file_pattern="*.txt"):
 
 def read_predictions_from_file(filename):
     """
-    Reader for the gold file and the template output file. 
-    Return values are four arrays with article ids, labels 
-    (or ? in the case of a template file), begin of a fragment, 
-    end of a fragment. 
+    Reader for the gold file and the template output file.
+    Return values are four arrays with article ids, labels
+    (or ? in the case of a template file), begin of a fragment,
+    end of a fragment.
     """
     articles_id, span_starts, span_ends, gold_labels = ([], [], [], [])
     with open(filename, "r") as f:
@@ -59,18 +59,29 @@ def read_predictions_from_file(filename):
 
 def compute_features(articles, span_starts, span_ends):
     # only one feature, the length of the span
+    # data =
     return np.array([int(sp_ends) - int(sp_starts) for sp_starts, sp_ends in zip(span_starts, span_ends)]).reshape(-1,
                                                                                                                    1)
+
+
+def compute_features2(articles, span_starts, span_ends):
+    # only one feature, the length of the span
+    return np.array([int(sp_ends) - int(sp_starts) for sp_starts, sp_ends in zip(span_starts, span_ends)]).reshape(-1,
+                                                                                                                   1)
+
+
+def preprocess():
+    pass
 
 
 ### MAIN ###
 
 # loading articles' content from *.txt files in the train folder
 articles = read_articles_from_file_list(train_folder)
-print(articles['111111111'])
-exit()
+# print(articles['111111111'])
+# exit()
 
-# loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder 
+# loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder
 ref_articles_id, ref_span_starts, ref_span_ends, train_gold_labels = read_predictions_from_file(train_labels_file)
 print("Loaded %d annotations from %d articles" % (len(ref_span_starts), len(set(ref_articles_id))))
 
