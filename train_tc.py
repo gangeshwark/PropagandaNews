@@ -1,42 +1,13 @@
-train_folder = "datasets/train-articles"  # check that the path to the datasets folder is correct,
-dev_folder = "datasets/dev-articles"  # if not adjust these variables accordingly
-train_labels_file = "datasets/train-task2-TC.labels"
+import pickle
+
+from keras.optimizers import RMSprop
+from tensorflow.python.ops import nn
+
+from models import model_custom
+
 dev_template_labels_file = "datasets/dev-task-TC-template.out"
-task_TC_output_file = "baseline-output-TC.txt"
 
-#
-# Baseline for Task TC
-#
-# Our baseline uses a logistic regression classifier on one feature only: the length of the sentence.
-#
-# Requirements: sklearn, numpy
-#
-
-
-import codecs
-import glob
-import os.path
-
-import numpy as np
-from sklearn.linear_model import LogisticRegression
-
-
-def read_articles_from_file_list(folder_name, file_pattern="*.txt"):
-    """
-    Read articles from files matching patterns <file_pattern> from
-    the directory <folder_name>.
-    The content of the article is saved in the dictionary whose key
-    is the id of the article (extracted from the file name).
-    Each element of <sentence_list> is one line of the article.
-    """
-    file_list = glob.glob(os.path.join(folder_name, file_pattern))
-    articles = {}
-    article_id_list, sentence_id_list, sentence_list = ([], [], [])
-    for filename in sorted(file_list):
-        article_id = os.path.basename(filename).split(".")[0][7:]
-        with codecs.open(filename, "r", encoding="utf8") as f:
-            articles[article_id] = f.read()
-    return articles
+data_path = './processed_data/'
 
 
 def read_predictions_from_file(filename):
@@ -57,51 +28,51 @@ def read_predictions_from_file(filename):
     return articles_id, span_starts, span_ends, gold_labels
 
 
-def compute_features(articles, span_starts, span_ends):
-    # only one feature, the length of the span
-    # data =
-    return np.array([int(sp_ends) - int(sp_starts) for sp_starts, sp_ends in zip(span_starts, span_ends)]).reshape(-1,
-                                                                                                                   1)
+def load_data():
+    train_x = pickle.load(open(data_path + 'train_x.p', 'rb'))
+    train_seq_len = pickle.load(open(data_path + 'train_seq_len.p', 'rb'))
+    train_y = pickle.load(open(data_path + 'train_y.p', 'rb'))
+    dev_x = pickle.load(open(data_path + 'dev_x.p', 'rb'))
+    dev_seq_len = pickle.load(open(data_path + 'dev_seq_len.p', 'rb'))
+    GloVe_Embeddings = pickle.load(open(data_path + 'GloVe_Embeddings.p', 'rb'))
+    # print(train_y)
+    return train_x, train_seq_len, train_y, dev_x, dev_seq_len, GloVe_Embeddings
 
 
-def compute_features2(articles, span_starts, span_ends):
-    # only one feature, the length of the span
-    return np.array([int(sp_ends) - int(sp_starts) for sp_starts, sp_ends in zip(span_starts, span_ends)]).reshape(-1,
-                                                                                                                   1)
-
-
-def preprocess():
+def create_split():
     pass
 
 
-### MAIN ###
+if __name__ == '__main__':
+    train_x, train_seq_len, train_y, dev_x, dev_seq_len, embeddings = load_data()
 
-# loading articles' content from *.txt files in the train folder
-articles = read_articles_from_file_list(train_folder)
-# print(articles['111111111'])
-# exit()
+    s = int(train_x.shape[0] * 0.90)
+    print(s, train_x.shape[0])
 
-# loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder
-ref_articles_id, ref_span_starts, ref_span_ends, train_gold_labels = read_predictions_from_file(train_labels_file)
-print("Loaded %d annotations from %d articles" % (len(ref_span_starts), len(set(ref_articles_id))))
+    test_x = train_x[s:]
+    train_x = train_x[:s]
 
-# compute one feature for each fragment, i.e. the length of the fragment, and train the model
-train = compute_features(articles, ref_span_starts, ref_span_ends)
-print(train.shape)
-model = LogisticRegression(penalty='l2', class_weight='balanced', solver="lbfgs")
-model.fit(train, train_gold_labels)
+    test_seq_len = train_seq_len[s:]
+    train_seq_len = train_seq_len[:s]
 
-# reading data from the development set
-dev_articles = read_articles_from_file_list(dev_folder)
-dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
+    test_y = train_y[s:]
+    train_y = train_y[:s]
 
-# computing the predictions on the development set
-dev = compute_features(dev_articles, dev_span_starts, dev_span_ends)
-predictions = model.predict(dev)
+    model = model_custom(embeddings)
 
-# writing predictions to file
-with open(task_TC_output_file, "w") as fout:
-    for article_id, prediction, span_start, span_end in zip(dev_article_ids, predictions, dev_span_starts,
-                                                            dev_span_ends):
-        fout.write("%s\t%s\t%s\t%s\n" % (article_id, prediction, span_start, span_end))
-print("Predictions written to file " + task_TC_output_file)
+    opt = RMSprop()
+
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
+    model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=5, batch_size=256, shuffle=True)
+
+    predictions = model.predict(dev_x)
+
+    # writing predictions to file
+    task_TC_output_file = "model-output-TC.txt"
+    dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
+
+    with open(task_TC_output_file, "w") as fout:
+        for article_id, prediction, span_start, span_end in zip(dev_article_ids, predictions, dev_span_starts,
+                                                                dev_span_ends):
+            fout.write("%s\t%s\t%s\t%s\n" % (article_id, prediction, span_start, span_end))
+    print("Predictions written to file " + task_TC_output_file)

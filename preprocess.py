@@ -1,4 +1,5 @@
 import io
+import pickle
 from pprint import pprint
 
 from keras.utils import to_categorical
@@ -34,8 +35,39 @@ LSTM_DIM = 300  # The dimension of the representations learnt by the LSTM model
 DROPOUT = 0.2  # Fraction of the units to drop for the linear transformation of the inputs. Ref - https://keras.io/layers/recurrent/
 NUM_EPOCHS = 10  # Number of epochs to train a model for
 
-label2index = {}
-index2label = {}
+label2index = {
+    'Appeal_to_Authority': 0,
+    'Appeal_to_fear-prejudice': 1,
+    'Bandwagon,Reductio_ad_hitlerum': 2,
+    'Black-and-White_Fallacy': 3,
+    'Causal_Oversimplification': 4,
+    'Doubt': 5,
+    'Exaggeration,Minimisation': 6,
+    'Flag-Waving': 7,
+    'Loaded_Language': 8,
+    'Name_Calling,Labeling': 9,
+    'Repetition': 10,
+    'Slogans': 11,
+    'Thought-terminating_Cliches': 12,
+    'Whataboutism,Straw_Men,Red_Herring': 13
+}
+
+index2label = {
+    0: 'Appeal_to_Authority',
+    1: 'Appeal_to_fear-prejudice',
+    2: 'Bandwagon,Reductio_ad_hitlerum',
+    3: 'Black-and-White_Fallacy',
+    4: 'Causal_Oversimplification',
+    5: 'Doubt',
+    6: 'Exaggeration,Minimisation',
+    7: 'Flag-Waving',
+    8: 'Loaded_Language',
+    9: 'Name_Calling,Labeling',
+    10: 'Repetition',
+    11: 'Slogans',
+    12: 'Thought-terminating_Cliches',
+    13: 'Whataboutism,Straw_Men,Red_Herring'
+}
 
 
 def getEmbeddingMatrix(wordIndex):
@@ -122,6 +154,10 @@ def clean_text(text):
 
     text = text.replace('"', ' " ')
     text = text.replace('\'', ' \' ')
+
+    text = text.replace('—', ' - ')
+    text = text.replace('–', ' - ')
+    text = text.replace('…', '...')
     return text
 
 
@@ -179,17 +215,35 @@ print("Found %s unique tokens." % len(wordIndex))
 print("Populating embedding matrix...")
 embeddingMatrix = getEmbeddingMatrix(wordIndex)
 
-max_len = 0
+train_seq_len = []
+dev_seq_len = []
 for x in articles_id:
-    if len(x) > max_len:
-        max_len = len(x)
-for x in dev_articles_id:
-    if len(x) > max_len:
-        max_len = len(x)
+    train_seq_len.append(len(x))
 
+for x in dev_articles_id:
+    dev_seq_len.append(len(x))
+
+max_len = max(train_seq_len + dev_seq_len)
 print(max_len)
 
 articles_id = pad_sequences(articles_id, maxlen=MAX_SEQUENCE_LENGTH)
 dev_articles_id = pad_sequences(dev_articles_id, maxlen=MAX_SEQUENCE_LENGTH)
-# labels = to_categorical(np.asarray(train_gold_labels))
 pprint(set(train_gold_labels))
+
+labels = [label2index[x] for x in train_gold_labels]
+labels = to_categorical(np.asarray(labels))
+train_seq_len = np.array(train_seq_len)
+dev_seq_len = np.array(dev_seq_len)
+
+data_path = './processed_data/'
+
+# save train data
+pickle.dump(articles_id, open(data_path + 'train_x.p', 'wb'))
+pickle.dump(train_seq_len, open(data_path + 'train_seq_len.p', 'wb'))
+pickle.dump(labels, open(data_path + 'train_y.p', 'wb'))
+
+# save dev data
+pickle.dump(dev_articles_id, open(data_path + 'dev_x.p', 'wb'))
+pickle.dump(dev_seq_len, open(data_path + 'dev_seq_len.p', 'wb'))
+
+pickle.dump(embeddingMatrix, open(data_path + 'GloVe_Embeddings.p', 'wb'))
