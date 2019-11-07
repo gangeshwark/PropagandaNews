@@ -1,12 +1,11 @@
 from keras.layers import Conv2D, MaxPool2D
-from keras.layers import Embedding, Concatenate, BatchNormalization
+from keras.layers import Embedding, Concatenate
 from keras.layers.core import *
 from keras.layers.recurrent import LSTM
 from keras.models import *
-from keras.optimizers import Adam, SGD, RMSprop
 
 
-def model_custom(embeddingMatrix):
+def model_CNN(embeddingMatrix):
     x1 = Input(shape=(140,), name='main_input1')
     embeddingLayer = Embedding(input_dim=embeddingMatrix.shape[0], output_dim=300, weights=[embeddingMatrix],
                                mask_zero=True, input_length=140, trainable=True)
@@ -33,20 +32,33 @@ def model_custom(embeddingMatrix):
     out_1_e1 = flatten(maxpool_1_e1)
     out_2_e1 = flatten(maxpool_2_e1)
     e1 = Concatenate(axis=-1)([out_0_e1, out_1_e1, out_2_e1])
-    expand_dim = Lambda(lambda x: K.expand_dims(x, axis=-2))
+    # expand_dim = Lambda(lambda x: K.expand_dims(x, axis=-2))
     e1 = activation(e1)
     # e1 = batch_norm1(e1)
     # e2 = batch_norm2(e2)
     # e3 = batch_norm3(e3)
-    e = expand_dim(e1)
+    # e = expand_dim(e1)
     # e = Reshape((3, 384))(e)
-    lstm_1 = LSTM(300, return_sequences=True)(e)
-    squeeze = Lambda(lambda x: K.squeeze(x, axis=1))
+    # lstm_1 = LSTM(300, return_sequences=True)(e)
+    # squeeze = Lambda(lambda x: K.squeeze(x, axis=1))
+    # lstm_1 = squeeze(lstm_1)
 
-    lstm_1 = squeeze(lstm_1)
+    att = Dense(600, activation='relu')(e1)
+    out = Dense(14, activation='softmax')(att)
+    model = Model([x1], out)
+    print(model.summary())
+    return model
 
-    # att = AttentionWeightedAverage()(lstm_1)
-    att = Dense(600, activation='relu')(lstm_1)
+
+def model_LSTM(embeddingMatrix):
+    x1 = Input(shape=(140,), name='main_input1')
+    embeddingLayer = Embedding(input_dim=embeddingMatrix.shape[0], output_dim=300, weights=[embeddingMatrix],
+                               mask_zero=True, input_length=140, trainable=True)
+    emb1 = embeddingLayer(x1)
+    emb1 = Activation('tanh')(emb1)
+    lstm_1 = LSTM(100, return_sequences=False)(emb1)
+
+    att = Dense(100, activation='relu')(lstm_1)
     out = Dense(14, activation='softmax')(att)
     model = Model([x1], out)
     print(model.summary())

@@ -1,9 +1,8 @@
 import pickle
 
-from keras.optimizers import RMSprop
-from tensorflow.python.ops import nn
+from keras.optimizers import SGD
 
-from models import model_custom
+from models import model_CNN
 
 dev_template_labels_file = "datasets/dev-task-TC-template.out"
 
@@ -74,12 +73,12 @@ if __name__ == '__main__':
     test_y = train_y[s:]
     train_y = train_y[:s]
 
-    model = model_custom(embeddings)
+    model = model_CNN(embeddings)
 
-    opt = RMSprop()
+    opt = SGD()
 
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
-    model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=5, batch_size=256, shuffle=True)
+    model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=150, batch_size=256, shuffle=True)
 
     predictions = model.predict(dev_x)
     predictions = predictions.argmax(axis=1)
