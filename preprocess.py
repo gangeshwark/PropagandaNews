@@ -1,10 +1,13 @@
 import io
+import json
 import pickle
+import socket
 from pprint import pprint
 
 from keras.utils import to_categorical
 from keras_preprocessing.sequence import pad_sequences
 from keras_preprocessing.text import Tokenizer
+import pandas as pd
 
 train_folder = "datasets/train-articles"  # check that the path to the datasets folder is correct,
 dev_folder = "datasets/dev-articles"  # if not adjust these variables accordingly
@@ -161,9 +164,40 @@ def clean_text(text):
     return text
 
 
-def compute_features(articles, ref_articles_id, span_starts, span_ends):
+def get_CrystalFeel_features(text):
+    PORT_NUMBER = 8247
+    IP_ADDRESS = '192.168.74.36'
+
+    text = bytes(text, 'utf-8')
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((IP_ADDRESS, PORT_NUMBER))
+
+    s.send(text)
+
+    result = ''
+    out = s.recv(1)
+    while (out != b'\n'):
+        result = result + str(out, 'utf-8')
+        out = s.recv(1)
+
+    s.close()
+    result = json.loads(result)
+    # pprint(result)
+    # print(result['intensity_scores'])
+    # print(type(result))
+    return result
+
+
+def get_():
+    pass
+
+
+def compute_features(articles, ref_articles_id, span_starts, span_ends, use_emotion_features=False):
     # only one feature, the length of the span
     # data =
+    new_data = pd.DataFrame(
+        columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
+                 'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment', 'tSentimentScore'])
     print(type(span_starts), len(span_starts))
     print(type(span_ends), len(span_ends))
     data = []
@@ -174,76 +208,121 @@ def compute_features(articles, ref_articles_id, span_starts, span_ends):
         article_span = clean_text(article[int(span_starts[i]):int(span_ends[i])])
         data.append([article_span])
         article_spans.append(article_span)
-    print(article_spans)
-    return article_spans
+
+        if use_emotion_features:
+            features = get_CrystalFeel_features(article_span)
+            if features['status'] != 'success':
+                with open('error.txt', 'a+') as error_file:
+                    error_file.write("{0}\t{1}\t{2}\n".format(ref_id, article_span, features['status']))
+                continue
+            print(features)
+            print(i)
+            intensity_scores = features['intensity_scores']
+            labels = features['labels']
+            new_data.loc[i] = [ref_id, article_span, int(span_starts[i]), int(span_ends[i]), intensity_scores['tAnger'],
+                               intensity_scores['tFear'], intensity_scores['tJoy'],
+                               intensity_scores['tSadness'], intensity_scores['tValence'], labels['tEmotion'],
+                               labels['tEmotionScore'], labels['tSentiment'],
+                               labels['tSentimentScore']]
+        if i == 5:
+            break
+
+    # print(article_spans)
+    if use_emotion_features:
+        return article_spans, new_data
+    return article_spans, None
 
 
 def preprocess():
     pass
 
 
-### MAIN ###
+if __name__ == '__main__':
+    use_emotion_features = True
+    ### MAIN ###
 
-# loading articles' content from *.txt files in the train folder
-articles = read_articles_from_file_list(train_folder)
-dev_articles = read_articles_from_file_list(dev_folder)
+    # loading articles' content from *.txt files in the train folder
+    articles = read_articles_from_file_list(train_folder)
+    dev_articles = read_articles_from_file_list(dev_folder)
 
-# computing the predictions on the development set
-# print(articles['111111111'])
-# exit()
+    # computing the predictions on the development set
+    # print(articles['111111111'])
+    # exit()
 
-# loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder
-ref_articles_id, ref_span_starts, ref_span_ends, train_gold_labels = read_predictions_from_file(train_labels_file)
-dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
-print("Loaded %d annotations from %d articles" % (len(ref_span_starts), len(set(ref_articles_id))))
+    # loading gold labels, articles ids and sentence ids from files *.task-TC.labels in the train labels folder
+    ref_articles_id, ref_span_starts, ref_span_ends, train_gold_labels = read_predictions_from_file(train_labels_file)
+    dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
+    print("Loaded %d annotations from %d articles" % (len(ref_span_starts), len(set(ref_articles_id))))
 
-# compute one feature for each fragment, i.e. the length of the fragment, and train the model
-articles = compute_features(articles, ref_articles_id, ref_span_starts, ref_span_ends)
-dev_articles = compute_features(dev_articles, dev_article_ids, dev_span_starts, dev_span_ends)
+    # compute one feature for each fragment, i.e. the length of the fragment, and train the model
+    articles, train_emo_feat = compute_features(articles, ref_articles_id, ref_span_starts, ref_span_ends,
+                                                use_emotion_features)
+    dev_articles, dev_emo_feat = compute_features(dev_articles, dev_article_ids, dev_span_starts, dev_span_ends,
+                                                  use_emotion_features)
 
-print("Extracting tokens...")
-tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
-tokenizer.fit_on_texts(articles + dev_articles)
-articles_id = tokenizer.texts_to_sequences(articles)
-dev_articles_id = tokenizer.texts_to_sequences(dev_articles)
-print(articles_id)
-print(dev_articles_id)
+    if use_emotion_features:
+        train_emo_feat['label'] = train_gold_labels
+        train_emo_feat.to_csv('datasets/train_articles_emotion_features.csv', index_label='index',
+                              columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
+                                       'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment',
+                                       'tSentimentScore', 'label'])
+        dev_emo_feat.to_csv('datasets/train_articles_emotion_features.csv', index_label='index',
+                            columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
+                                     'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment',
+                                     'tSentimentScore'])
 
-wordIndex = tokenizer.word_index
-print("Found %s unique tokens." % len(wordIndex))
+    print("Extracting tokens...")
+    tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
+    tokenizer.fit_on_texts(articles + dev_articles)
+    articles_id = tokenizer.texts_to_sequences(articles)
+    dev_articles_id = tokenizer.texts_to_sequences(dev_articles)
+    print(articles_id)
+    print(dev_articles_id)
 
-print("Populating embedding matrix...")
-embeddingMatrix = getEmbeddingMatrix(wordIndex)
+    wordIndex = tokenizer.word_index
+    print("Found %s unique tokens." % len(wordIndex))
 
-train_seq_len = []
-dev_seq_len = []
-for x in articles_id:
-    train_seq_len.append(len(x))
+    print("Populating embedding matrix...")
+    embeddingMatrix = getEmbeddingMatrix(wordIndex)
 
-for x in dev_articles_id:
-    dev_seq_len.append(len(x))
+    train_seq_len = []
+    dev_seq_len = []
+    for x in articles_id:
+        train_seq_len.append(len(x))
 
-max_len = max(train_seq_len + dev_seq_len)
-print(max_len)
+    for x in dev_articles_id:
+        dev_seq_len.append(len(x))
 
-articles_id = pad_sequences(articles_id, maxlen=MAX_SEQUENCE_LENGTH)
-dev_articles_id = pad_sequences(dev_articles_id, maxlen=MAX_SEQUENCE_LENGTH)
-pprint(set(train_gold_labels))
+    max_len = max(train_seq_len + dev_seq_len)
+    print(max_len)
 
-labels = [label2index[x] for x in train_gold_labels]
-labels = to_categorical(np.asarray(labels))
-train_seq_len = np.array(train_seq_len)
-dev_seq_len = np.array(dev_seq_len)
+    articles_id = pad_sequences(articles_id, maxlen=MAX_SEQUENCE_LENGTH)
+    dev_articles_id = pad_sequences(dev_articles_id, maxlen=MAX_SEQUENCE_LENGTH)
+    pprint(set(train_gold_labels))
 
-data_path = './processed_data/'
+    labels = [label2index[x] for x in train_gold_labels]
+    labels = to_categorical(np.asarray(labels))
+    train_seq_len = np.array(train_seq_len)
+    dev_seq_len = np.array(dev_seq_len)
 
-# save train data
-pickle.dump(articles_id, open(data_path + 'train_x.p', 'wb'))
-pickle.dump(train_seq_len, open(data_path + 'train_seq_len.p', 'wb'))
-pickle.dump(labels, open(data_path + 'train_y.p', 'wb'))
+    data_path = './processed_data_new/'
 
-# save dev data
-pickle.dump(dev_articles_id, open(data_path + 'dev_x.p', 'wb'))
-pickle.dump(dev_seq_len, open(data_path + 'dev_seq_len.p', 'wb'))
+    # save train data
+    pickle.dump(articles_id, open(data_path + 'train_x.p', 'wb'))
+    pickle.dump(train_seq_len, open(data_path + 'train_seq_len.p', 'wb'))
+    pickle.dump(labels, open(data_path + 'train_y.p', 'wb'))
 
-pickle.dump(embeddingMatrix, open(data_path + 'GloVe_Embeddings.p', 'wb'))
+    # save dev data
+    pickle.dump(dev_articles_id, open(data_path + 'dev_x.p', 'wb'))
+    pickle.dump(dev_seq_len, open(data_path + 'dev_seq_len.p', 'wb'))
+
+    pickle.dump(embeddingMatrix, open(data_path + 'GloVe_Embeddings.p', 'wb'))
+
+    if use_emotion_features:
+        train = train_emo_feat[['tAnger', 'tFear', 'tJoy', 'tSadness',
+                                'tValence', 'tEmotionScore', 'tSentimentScore']]
+        dev = dev_emo_feat[['tAnger', 'tFear', 'tJoy', 'tSadness',
+                            'tValence', 'tEmotionScore', 'tSentimentScore']]
+
+        pickle.dump(train, open(data_path + 'train_x_emotion.p', 'wb'))
+        pickle.dump(dev, open(data_path + 'dev_x_emotion.p', 'wb'))

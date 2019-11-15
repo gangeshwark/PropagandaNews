@@ -1,3 +1,8 @@
+"""
+Author: Gangeshwar
+Description: Training file for Technique Classification.
+"""
+
 import pickle
 
 from keras.optimizers import SGD
