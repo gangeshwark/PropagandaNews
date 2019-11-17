@@ -5,9 +5,10 @@ Description: Training file for Technique Classification.
 
 import pickle
 
-from keras.optimizers import SGD
+from keras.callbacks import ModelCheckpoint
+from keras.optimizers import SGD, RMSprop, Adam
 
-from models import model_CNN
+from models import model_CNN, model_CNN_emo, load_model
 
 dev_template_labels_file = "datasets/dev-task-TC-template.out"
 
@@ -33,18 +34,17 @@ def read_predictions_from_file(filename):
 
 
 def load_data():
+    print("Loading data...")
     train_x = pickle.load(open(data_path + 'train_x.p', 'rb'))
     train_seq_len = pickle.load(open(data_path + 'train_seq_len.p', 'rb'))
     train_y = pickle.load(open(data_path + 'train_y.p', 'rb'))
     dev_x = pickle.load(open(data_path + 'dev_x.p', 'rb'))
     dev_seq_len = pickle.load(open(data_path + 'dev_seq_len.p', 'rb'))
+    train_x_emo = pickle.load(open(data_path + 'train_x_emotion.p', 'rb'))
+    dev_x_emo = pickle.load(open(data_path + 'dev_x_emotion.p', 'rb'))
     GloVe_Embeddings = pickle.load(open(data_path + 'GloVe_Embeddings.p', 'rb'))
     # print(train_y)
-    return train_x, train_seq_len, train_y, dev_x, dev_seq_len, GloVe_Embeddings
-
-
-def create_split():
-    pass
+    return train_x, train_x_emo, train_seq_len, train_y, dev_x, dev_x_emo, dev_seq_len, GloVe_Embeddings
 
 
 index2label = {
@@ -64,7 +64,12 @@ index2label = {
     13: 'Whataboutism,Straw_Men,Red_Herring'
 }
 if __name__ == '__main__':
-    train_x, train_seq_len, train_y, dev_x, dev_seq_len, embeddings = load_data()
+    train_x, train_x_emo, train_seq_len, train_y, dev_x, dev_x_emo, dev_seq_len, embeddings = load_data()
+
+    print(train_x_emo.shape)
+    print(dev_x_emo.shape)
+
+    # exit()
 
     s = int(train_x.shape[0] * 0.90)
     print(s, train_x.shape[0])
@@ -72,24 +77,48 @@ if __name__ == '__main__':
     test_x = train_x[s:]
     train_x = train_x[:s]
 
+    test_x_emo = train_x_emo[s:]
+    train_x_emo = train_x_emo[:s]
+
     test_seq_len = train_seq_len[s:]
     train_seq_len = train_seq_len[:s]
 
     test_y = train_y[s:]
     train_y = train_y[:s]
 
-    model = model_CNN(embeddings)
+    model = model_CNN_emo(embeddings)
 
-    opt = SGD()
+    lr = 0.0001
+    bz = 256
+    epochs = 150
+
+    opt = Adam(lr=lr)
+    # print(str(opt))
+    # exit()
+    model_name = 'text_emotion_Adam_lr%s_bz%s' % (lr, bz)
+    model_path = 'models/%s' % (model_name)
+    checkpoint = ModelCheckpoint('%s.{epoch:02d}.hdf5' % (model_path), monitor='loss', verbose=1,
+                                 save_best_only=False, mode='auto')
 
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
-    model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=150, batch_size=256, shuffle=True)
+    try:
+        model.fit([train_x, train_x_emo], train_y, validation_data=[[test_x, test_x_emo], test_y], epochs=epochs,
+                  batch_size=bz,
+                  shuffle=True, callbacks=[checkpoint])
+    except:
+        pass
 
-    predictions = model.predict(dev_x)
+    epoch = input("\n\nWhich epoch to load?\nAns: ")
+    epoch = int(epoch)
+    load_model_path = '%s.%02d.hdf5' % (model_path, epoch)
+    print('Loading model - ', load_model_path)
+    model = load_model(load_model_path, custom_objects={'loss': 'categorical_crossentropy'})
+    # print(model.summary())
+    predictions = model.predict([dev_x, dev_x_emo])
     predictions = predictions.argmax(axis=1)
 
     # writing predictions to file
-    task_TC_output_file = "model-output-TC_old.txt"
+    task_TC_output_file = "model-output-TC.txt"
     dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
 
     with open(task_TC_output_file, "w") as fout:
