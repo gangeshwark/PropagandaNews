@@ -4,10 +4,11 @@ import pickle
 import socket
 from pprint import pprint
 
+import pandas as pd
 from keras.utils import to_categorical
 from keras_preprocessing.sequence import pad_sequences
 from keras_preprocessing.text import Tokenizer
-import pandas as pd
+from tqdm import tqdm
 
 train_folder = "datasets/train-articles"  # check that the path to the datasets folder is correct,
 dev_folder = "datasets/dev-articles"  # if not adjust these variables accordingly
@@ -161,12 +162,13 @@ def clean_text(text):
     text = text.replace('—', ' - ')
     text = text.replace('–', ' - ')
     text = text.replace('…', '...')
+    text = text.strip()
     return text
 
 
 def get_CrystalFeel_features(text):
     PORT_NUMBER = 8247
-    IP_ADDRESS = '192.168.74.36'
+    IP_ADDRESS = '10.217.163.99'
 
     text = bytes(text, 'utf-8')
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -188,10 +190,6 @@ def get_CrystalFeel_features(text):
     return result
 
 
-def get_():
-    pass
-
-
 def compute_features(articles, ref_articles_id, span_starts, span_ends, use_emotion_features=False):
     # only one feature, the length of the span
     # data =
@@ -202,21 +200,30 @@ def compute_features(articles, ref_articles_id, span_starts, span_ends, use_emot
     print(type(span_ends), len(span_ends))
     data = []
     article_spans = []
-    for i, ref_id in enumerate(ref_articles_id):
+    for i, ref_id in tqdm(enumerate(ref_articles_id)):
         # print(articles[ref_id], span_starts[i], span_ends[i])
         article = articles[ref_id]
         article_span = clean_text(article[int(span_starts[i]):int(span_ends[i])])
         data.append([article_span])
         article_spans.append(article_span)
-
+        if article_span == '':
+            with open('error.txt', 'a+') as error_file:
+                error_file.write("{0}\t{1}\t{2}\n".format(ref_id, article_span, 'EMPTY STRING'))
+            if use_emotion_features:
+                new_data.loc[i] = [ref_id, article_span, int(span_starts[i]), int(span_ends[i]),
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 'no specific emotion', 0, 'neutral', 0]
+            continue
         if use_emotion_features:
             features = get_CrystalFeel_features(article_span)
             if features['status'] != 'success':
                 with open('error.txt', 'a+') as error_file:
                     error_file.write("{0}\t{1}\t{2}\n".format(ref_id, article_span, features['status']))
+                new_data.loc[i] = [ref_id, article_span, int(span_starts[i]), int(span_ends[i]),
+                                   0.0, 0.0, 0.0, 0.0, 0.0, 'no specific emotion', 0, 'neutral', 0]
                 continue
-            print(features)
-            print(i)
+
+            # print(features)
+            # print(i)
             intensity_scores = features['intensity_scores']
             labels = features['labels']
             new_data.loc[i] = [ref_id, article_span, int(span_starts[i]), int(span_ends[i]), intensity_scores['tAnger'],
@@ -224,8 +231,6 @@ def compute_features(articles, ref_articles_id, span_starts, span_ends, use_emot
                                intensity_scores['tSadness'], intensity_scores['tValence'], labels['tEmotion'],
                                labels['tEmotionScore'], labels['tSentiment'],
                                labels['tSentimentScore']]
-        if i == 5:
-            break
 
     # print(article_spans)
     if use_emotion_features:
@@ -233,12 +238,8 @@ def compute_features(articles, ref_articles_id, span_starts, span_ends, use_emot
     return article_spans, None
 
 
-def preprocess():
-    pass
-
-
 if __name__ == '__main__':
-    use_emotion_features = True
+    use_emotion_features = False
     ### MAIN ###
 
     # loading articles' content from *.txt files in the train folder
@@ -259,25 +260,39 @@ if __name__ == '__main__':
                                                 use_emotion_features)
     dev_articles, dev_emo_feat = compute_features(dev_articles, dev_article_ids, dev_span_starts, dev_span_ends,
                                                   use_emotion_features)
+    # exit()
 
     if use_emotion_features:
-        train_emo_feat['label'] = train_gold_labels
+        print(train_emo_feat.shape)
         train_emo_feat.to_csv('datasets/train_articles_emotion_features.csv', index_label='index',
                               columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
                                        'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment',
                                        'tSentimentScore', 'label'])
-        dev_emo_feat.to_csv('datasets/train_articles_emotion_features.csv', index_label='index',
+        dev_emo_feat.to_csv('datasets/dev_articles_emotion_features.csv', index_label='index',
                             columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
                                      'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment',
                                      'tSentimentScore'])
+        try:
+            train_emo_feat['label'] = train_gold_labels
+            train_emo_feat.to_csv('datasets/train_articles_emotion_features.csv', index_label='index',
+                                  columns=['article_id', 'article_span', 'span_start', 'span_end', 'tAnger', 'tFear',
+                                           'tJoy', 'tSadness', 'tValence', 'tEmotion', 'tEmotionScore', 'tSentiment',
+                                           'tSentimentScore', 'label'])
+        except:
+            print('ERRORRRRRR!!!!')
+
+    if True:
+        train_emo_feat = pd.read_csv('datasets/train_articles_emotion_features.csv', index_col='index')
+        dev_emo_feat = pd.read_csv('datasets/dev_articles_emotion_features.csv', index_col='index')
+        # pd.read_csv()
 
     print("Extracting tokens...")
     tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
     tokenizer.fit_on_texts(articles + dev_articles)
     articles_id = tokenizer.texts_to_sequences(articles)
     dev_articles_id = tokenizer.texts_to_sequences(dev_articles)
-    print(articles_id)
-    print(dev_articles_id)
+    # print(articles_id)
+    # print(dev_articles_id)
 
     wordIndex = tokenizer.word_index
     print("Found %s unique tokens." % len(wordIndex))
@@ -305,7 +320,7 @@ if __name__ == '__main__':
     train_seq_len = np.array(train_seq_len)
     dev_seq_len = np.array(dev_seq_len)
 
-    data_path = './processed_data_new/'
+    data_path = './processed_data/'
 
     # save train data
     pickle.dump(articles_id, open(data_path + 'train_x.p', 'wb'))
@@ -318,7 +333,7 @@ if __name__ == '__main__':
 
     pickle.dump(embeddingMatrix, open(data_path + 'GloVe_Embeddings.p', 'wb'))
 
-    if use_emotion_features:
+    if use_emotion_features or True:
         train = train_emo_feat[['tAnger', 'tFear', 'tJoy', 'tSadness',
                                 'tValence', 'tEmotionScore', 'tSentimentScore']]
         dev = dev_emo_feat[['tAnger', 'tFear', 'tJoy', 'tSadness',
