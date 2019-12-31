@@ -1,4 +1,4 @@
-from keras.layers import Conv2D, MaxPool2D
+from keras.layers import Conv2D, MaxPool2D, Bidirectional
 from keras.layers import Embedding, Concatenate
 from keras.layers.core import *
 from keras.layers.recurrent import LSTM
@@ -89,13 +89,13 @@ def model_CNN_emo(embeddingMatrix):
     # squeeze = Lambda(lambda x: K.squeeze(x, axis=1))
     # lstm_1 = squeeze(lstm_1)
 
-    att = Dense(300, activation='relu')(e1)
+    att = Dense(600, activation='relu')(e1)
 
     # emo_layer = Dense(10, activation='relu')(x_emo)
     concat_layer = Concatenate(axis=-1)([att, x_emo])
-    final_layer = Dense(100, activation='relu')(concat_layer)
+    # final_layer = Dense(100, activation='relu')(concat_layer)
 
-    out = Dense(14, activation='softmax')(final_layer)
+    out = Dense(14, activation='softmax')(concat_layer)
     model = Model([x, x_emo], out)
     print(model.summary())
     return model
@@ -107,10 +107,10 @@ def model_LSTM(embeddingMatrix):
                                mask_zero=True, input_length=140, trainable=True)
     emb1 = embeddingLayer(x1)
     emb1 = Activation('tanh')(emb1)
-    lstm_1 = LSTM(100, return_sequences=False)(emb1)
-
-    att = Dense(100, activation='relu')(lstm_1)
-    out = Dense(14, activation='softmax')(att)
+    lstm_1 = Bidirectional(LSTM(100, return_sequences=False))(emb1)
+    drp = Dropout(0.5)(lstm_1)
+    # att = Dense(100, activation='relu')(drp)
+    out = Dense(14, activation='softmax')(drp)
     model = Model([x1], out)
     print(model.summary())
     return model

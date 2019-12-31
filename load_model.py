@@ -30,7 +30,7 @@ if __name__ == '__main__':
     print('Loading model - ', load_model_path)
     model = load_model(load_model_path, custom_objects={'loss': 'categorical_crossentropy'})
     # print(model.summary())
-    predictions = model.predict([dev_x, dev_x_emo])
+    predictions = model.predict([dev_x])
     predictions = predictions.argmax(axis=1)
 
     # writing predictions to file

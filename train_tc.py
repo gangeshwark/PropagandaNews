@@ -5,9 +5,11 @@ Description: Training file for Technique Classification.
 
 import pickle
 
-from keras.optimizers import SGD
+from keras.callbacks import ModelCheckpoint
+from keras.optimizers import Adam, RMSprop, SGD
+from sklearn.model_selection import train_test_split
 
-from models import model_CNN
+from models import *
 
 dev_template_labels_file = "datasets/dev-task-TC-template.out"
 
@@ -66,30 +68,59 @@ index2label = {
 if __name__ == '__main__':
     train_x, train_seq_len, train_y, dev_x, dev_seq_len, embeddings = load_data()
 
-    s = int(train_x.shape[0] * 0.90)
-    print(s, train_x.shape[0])
+    # Split the data
+    train_x, test_x, train_seq_len, test_seq_len, train_y, test_y = train_test_split(train_x,
+                                                                                     train_seq_len,
+                                                                                     train_y,
+                                                                                     test_size=0.10,
+                                                                                     shuffle=True, stratify=train_y)
 
-    test_x = train_x[s:]
-    train_x = train_x[:s]
+    # s = int(train_x.shape[0] * 0.90)
+    # print(s, train_x.shape[0])
+    #
+    # test_x = train_x[s:]
+    # train_x = train_x[:s]
+    #
+    # test_seq_len = train_seq_len[s:]
+    # train_seq_len = train_seq_len[:s]
+    #
+    # test_y = train_y[s:]
+    # train_y = train_y[:s]
 
-    test_seq_len = train_seq_len[s:]
-    train_seq_len = train_seq_len[:s]
+    model = model_LSTM(embeddings)
 
-    test_y = train_y[s:]
-    train_y = train_y[:s]
+    lr = 0.0001
+    bz = 256
+    epochs = 300
 
-    model = model_CNN(embeddings)
-
-    opt = SGD()
+    opt = SGD(0.01)
+    opt = Adam(lr)
+    # print(str(opt))
+    # exit()
+    model_name = 'text_LSTM_Adam_lr%s_bz%s' % (lr, bz)
+    model_path = 'models/%s' % (model_name)
+    checkpoint = ModelCheckpoint('%s.{epoch:02d}.hdf5' % (model_path), monitor='loss', verbose=1,
+                                 save_best_only=False, mode='auto')
 
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
-    model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=150, batch_size=256, shuffle=True)
+    try:
+        model.fit(train_x, train_y, validation_data=[test_x, test_y], epochs=epochs,
+                  batch_size=bz,
+                  shuffle=True, callbacks=[checkpoint])
+    except:
+        pass
 
+    epoch = input("\n\nWhich epoch to load?\nAns: ")
+    epoch = int(epoch)
+    load_model_path = '%s.%02d.hdf5' % (model_path, epoch)
+    print('Loading model - ', load_model_path)
+    model = load_model(load_model_path, custom_objects={'loss': 'categorical_crossentropy'})
+    # print(model.summary())
     predictions = model.predict(dev_x)
     predictions = predictions.argmax(axis=1)
 
     # writing predictions to file
-    task_TC_output_file = "model-output-TC_old.txt"
+    task_TC_output_file = "model-output-TC.txt"
     dev_article_ids, dev_span_starts, dev_span_ends, dev_labels = read_predictions_from_file(dev_template_labels_file)
 
     with open(task_TC_output_file, "w") as fout:

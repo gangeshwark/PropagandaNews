@@ -6,9 +6,10 @@ Description: Training file for Technique Classification.
 import pickle
 
 from keras.callbacks import ModelCheckpoint
-from keras.optimizers import SGD, RMSprop, Adam
+from keras.optimizers import Adam, SGD
+from sklearn.model_selection import train_test_split
 
-from models import model_CNN, model_CNN_emo, load_model
+from models import model_CNN_emo, load_model
 
 dev_template_labels_file = "datasets/dev-task-TC-template.out"
 
@@ -66,36 +67,46 @@ index2label = {
 if __name__ == '__main__':
     train_x, train_x_emo, train_seq_len, train_y, dev_x, dev_x_emo, dev_seq_len, embeddings = load_data()
 
+    # Split the data
+    train_x, test_x, train_x_emo, test_x_emo, train_seq_len, test_seq_len, train_y, test_y = train_test_split(train_x,
+                                                                                                              train_x_emo,
+                                                                                                              train_seq_len,
+                                                                                                              train_y,
+                                                                                                              test_size=0.10,
+                                                                                                              shuffle=True,
+                                                                                                              stratify=train_y)
+
     print(train_x_emo.shape)
     print(dev_x_emo.shape)
 
     # exit()
 
-    s = int(train_x.shape[0] * 0.90)
-    print(s, train_x.shape[0])
+    # s = int(train_x.shape[0] * 0.90)
+    # print(s, train_x.shape[0])
 
-    test_x = train_x[s:]
-    train_x = train_x[:s]
-
-    test_x_emo = train_x_emo[s:]
-    train_x_emo = train_x_emo[:s]
-
-    test_seq_len = train_seq_len[s:]
-    train_seq_len = train_seq_len[:s]
-
-    test_y = train_y[s:]
-    train_y = train_y[:s]
+    # test_x = train_x[s:]
+    # train_x = train_x[:s]
+    #
+    # test_x_emo = train_x_emo[s:]
+    # train_x_emo = train_x_emo[:s]
+    #
+    # test_seq_len = train_seq_len[s:]
+    # train_seq_len = train_seq_len[:s]
+    #
+    # test_y = train_y[s:]
+    # train_y = train_y[:s]
 
     model = model_CNN_emo(embeddings)
 
     lr = 0.0001
     bz = 256
-    epochs = 150
+    epochs = 300
 
     opt = Adam(lr=lr)
+    opt = SGD(0.01)
     # print(str(opt))
     # exit()
-    model_name = 'text_emotion_Adam_lr%s_bz%s' % (lr, bz)
+    model_name = 'text_Adam_lr%s_bz%s' % (lr, bz)
     model_path = 'models/%s' % (model_name)
     checkpoint = ModelCheckpoint('%s.{epoch:02d}.hdf5' % (model_path), monitor='loss', verbose=1,
                                  save_best_only=False, mode='auto')

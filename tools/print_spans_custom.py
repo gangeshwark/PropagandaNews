@@ -34,6 +34,25 @@ def main(args):
     print(footnotes)
 
 
+def main1(args):
+    span_file = args.spans_file
+    article_file = args.article_file
+
+    with codecs.open(article_file, "r", encoding="utf8") as f:
+        article_content = f.read()
+    with codecs.open(span_file, "r", encoding="utf8") as f:
+        span_content = f.read()
+
+    spans = span_content.split('\n')
+    # print(article_content)
+    # print(spans)
+    for span in spans:
+        if span:
+            id_, label, start, end = span.split('\t')
+            print(label, start, end, article_content[int(start):int(end)])
+            print()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Highlight labelled spans in a text file. Do not pipe with less. \n" +
                                                  "Example: print_spans.py -s data/article736757214.task-FLC.labels -t data/article736757214.txt")
@@ -42,4 +61,5 @@ if __name__ == "__main__":
                         help="file with spans to be highlighted. One line of the span file")
     parser.add_argument('-l', '--add-line-numbers', dest='add_line_numbers', required=False,
                         action='store_true', help="Prepend line numbers on output.")
+    main1(parser.parse_args())
     main(parser.parse_args())
