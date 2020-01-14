@@ -532,20 +532,14 @@ def main(args):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser("Scorer for Task SI on the Propaganda Techniques Corpus.")
+    parser = argparse.ArgumentParser("Scorer for Task SI on the Propaganda Techniques Corpus. ")
     parser.add_argument('-s', '--submission-file', dest='submission', required=True, help="file with the submission of the team")
     parser.add_argument('-r', '--reference-folder', dest='gold', required=True, help="folder with the gold labels.")
     parser.add_argument('-d', '--enable-debug-on-standard-output', dest='debug_on_std', required=False,
                         action='store_true', help="Print debug info also on standard output.")
-    parser.add_argument('-t', '--propaganda-techniques-list-file', dest='techniques_file', required=False, default=TECHNIQUE_NAMES_FILE, 
-                        help="file with the list of propaganda techniques")
     parser.add_argument('-l', '--log-file', dest='log_file', required=False, help="Output logger file.")
-    parser.add_argument('-f', '--fragments-only', dest='fragments_only', required=False, action='store_true', default=False,
-                        help="If the option is added, two fragments match independently of their propaganda techniques")
     parser.add_argument('-m', '--merge-user-annotations', dest='merge_user_annotations', required=False, action='store_true',
                         default=False, help="If the option is added, overlapping user annotations are merged")
-    parser.add_argument('-e', '--per-example-evaluation', dest='per_article_evaluation', required=False, action='store_true',
-                        default=False, help="Prints the value of the evaluation function for each example/article")
     parser.add_argument('-o', '--output-for-script', dest='output_for_script', required=False, action='store_true',
                         default=False, help="Prints the output in an easy-to-parse way for a script")
     main(parser.parse_args())

@@ -1,6 +1,7 @@
-#from __future__ import annotations
+from __future__ import annotations
 from typing import Dict
 import sys
+import re
 import os.path
 import glob
 import logging.handlers
@@ -25,14 +26,14 @@ logger = logging.getLogger("propaganda_scorer")
 class Annotations(object):
     """
     Dictionary of Articles_annotations objects. 
-    (basically a dataset of article annotations)
+    (basically a dataset of article_annotations objects)
+
     """
 
     def __init__(self, annotations:aa.Articles_annotations=None):
 
         if annotations is None:
-            #self.annotations:Dict[str, aa.Articles_annotations] = {}
-            self.annotations = {} 
+            self.annotations:Dict[str, aa.Articles_annotations] = {} 
         else:
             self.annotations = annotations
 
@@ -50,7 +51,7 @@ class Annotations(object):
         If such article does not exists, the annotation is created. 
         """
         if not self.has_article(article_id):
-            self.annotations[article_id] = aa.Articles_annotations(article_id=article_id)
+            self.create_article_annotations_object(article_id)
         self.annotations[article_id].add_annotation(annotation)
 
 
@@ -98,8 +99,7 @@ class Annotations(object):
         return True
 
 
-    #def compare_annotations_identical_article_lists(self, second_annotations:Annotations):
-    def compare_annotations_identical_article_lists(self, second_annotations):
+    def compare_annotations_identical_article_lists(self, second_annotations:Annotations):
         """
         Compare if self and <second_annotations> have identical article id lists
         :return: True if the lists are identical and False otherwise. 
@@ -118,8 +118,7 @@ class Annotations(object):
         return True
 
 
-    #def compare_annotations_identical(self, second_annotations:Annotations):
-    def compare_annotations_identical(self, second_annotations):
+    def compare_annotations_identical(self, second_annotations:Annotations)->bool:
         """
         Compare if self and <second_annotations> have identical annotations (without considering the technique labels)
         :return: True if the lists are identical and False otherwise. 
@@ -131,17 +130,16 @@ class Annotations(object):
                 logger.error("The number of annotations for article %s differs: %d vs %d"%(article_id, len(an1_article_annotations), len(an2_article_annotations)))
                 return False
             for an1, an2 in zip(an1_article_annotations, an2_article_annotations):
-                if not an1.is_equal_to(an2, False):
+                if not an1.is_span_equal_to(an2):
                     logger.error("The spans of the annotations of article %s do not match: [%s, %s] vs [%s, %s]"%(article_id, an1.get_start_offset(), an1.get_end_offset(), an2.get_start_offset(), an2.get_end_offset()))
                     return False
         return True
 
 
-    #def compute_SI_score(self, second_annotations:anwol.AnnotationWithOutLabel):
-    def compute_SI_score(self, second_annotations):
+#    def compute_SI_score(self, second_annotations:anwol.AnnotationWithOutLabel):
 #        def compute_score_pr(submission_annotations, gold_annotations, technique_names, prop_vs_non_propaganda=False,
  #                    per_article_evaluation=False):
-        pass
+#        pass
         # prec_denominator = sum([len(annotations) for annotations in submission_annotations.values()])
         # rec_denominator = sum([len(annotations) for annotations in gold_annotations.values()])
         # technique_Spr_prec = {propaganda_technique: 0 for propaganda_technique in technique_names}
@@ -200,10 +198,21 @@ class Annotations(object):
         # return f1
 
 
+    def align_annotations(self, second_annotations:Annotations)->None:
+        """
+        Reorder all annotations such that the matching between annotations' labels
+        and the ones from second_annotations is maximised. 
+        """
+        for article_id in second_annotations.get_article_id_list():
+            self.get_article_annotations_obj(article_id).align_annotations(second_annotations.get_article_annotations_obj(article_id))
 
-    #def compute_TC_score(self, second_annotations:Annotations):
-    def compute_TC_score(self, second_annotations):
 
+    def compute_TC_score(self, second_annotations:Annotations):
+        """
+        second_annotations: gold labels
+        """
+
+        self.align_annotations(second_annotations)
         gold_labels = [ x.get_label() for x in second_annotations.get_full_list_of_annotations() ]
         submission_labels = [ x.get_label() for x in  self.get_full_list_of_annotations() ]
 
@@ -217,15 +226,18 @@ class Annotations(object):
         return precision, recall, f1
 
 
-    #def TC_score_to_string(self, second_annotation:Annotations, output_for_script=False):
-    def TC_score_to_string(self, second_annotation, output_for_script=False):
+    def create_article_annotations_object(self, article_id:str)->None:
+        self.annotations[article_id] = aa.Articles_annotations(article_id=article_id)  
 
-            if an.Annotation.propaganda_techniques is None: # raise an error
+
+    def TC_score_to_string(self, second_annotation:Annotations, output_for_script=False):
+
+            if an.Annotation.propaganda_techniques is None: #raise an error
                 precision, recall, f1 = self.compute_TC_score(second_annotation)    
                 res = "\nPrecision=%f\nRecall=%f\nF1=%f\n"%(precision, recall, f1)
             else:
                 precision, recall, f1, f1_per_class = self.compute_TC_score(second_annotation)
-                res_for_screen = "\nF1=%f\nPrecision=%f\nRecall=%f\n%s\n" % (f1, precision, recall, "\n".join([ "F1_"+pr+"="+str(f) for pr, f in zip(an.Annotation.propaganda_techniques.get_propaganda_techniques_list(), f1_per_class)]))
+                res_for_screen = "\nF1=%f\nPrecision=%f\nRecall=%f\n%s\n" % (precision, recall, f1, "\n".join([ "F1_"+pr+"="+str(f) for pr, f in zip(an.Annotation.propaganda_techniques.get_propaganda_techniques_list(), f1_per_class)]))
                 if output_for_script:
                     res_for_script = "%f\t%f\t%f\t"%(f1, precision, recall)
                     res_for_script += "\t".join([ str(x) for x in f1_per_class])
@@ -256,23 +268,30 @@ class Annotations(object):
         return self.annotations.keys()
 
 
-    def get_article_annotations_obj(self, article_id):
+    def get_article_annotations_obj(self, article_id:str):
         """
         Returns all annotations of an article as an Article_annotations object.
         """
         return self.annotations[article_id]
 
 
-    def get_article_annotations_list(self, article_id):
+    def get_article_annotations_list(self, article_id:str):
         """
-        Returns all annotations of an article as an Article_annotations object.
+        Returns all annotations of an article as a list of Annotation objects.
         """
         return self.annotations[article_id].get_article_annotations()
 
 
+    def _guess_article_id_from_file_name(self, filename:str)->str:
+        
+        regex = re.compile("article([0-9]+).*")
+        article_id = regex.match(os.path.basename(filename)).group(1)
+        return article_id
+
+
     def load_annotation_list_from_file(self, filename):
         """
-        Loads all annotations in file <filename>. 
+        Loads all annotations in file <filename>. The file is supposed to contain annotations for multiple articles. To load annotations for a single article use the function with the same name from module src.article_annotations. 
         Each annotation is checked according to check_format_of_annotation_in_file()
         """
         with open(filename, "r") as f:
@@ -287,13 +306,20 @@ class Annotations(object):
         Loads all annotations from all files in folder <folder_name>. 
         Files in the folder are selected according to <pattern>
         """
+        if not os.path.exists(folder_name):
+            logger.error("trying to load annotations from folder %s, which does not exists"%(folder_name))
+            return False
+        if not os.path.isdir(folder_name):
+            logger.error("trying to load annotations from folder %s, which does not appear to be a valid folder"%(folder_name))
+            return False
         file_list = glob.glob(os.path.join(folder_name, pattern))
         if len(file_list) == 0:
             logger.error("Cannot load file list %s/%s"%(folder_name, pattern))
             sys.exit()
         for filename in file_list:
+            self.create_article_annotations_object(self._guess_article_id_from_file_name(filename))
             self.load_annotation_list_from_file(filename)
-
+        return True
 
 #    def compute_technique_frequency(annotations_list, technique_name):
 #        return sum([len([example_annotation for example_annotation in x if example_annotation[0] == technique_name])
