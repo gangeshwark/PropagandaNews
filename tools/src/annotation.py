@@ -1,4 +1,4 @@
-#from __future__ import annotations
+from __future__ import annotations
 import sys
 import logging.handlers
 import src.propaganda_techniques as pt
@@ -31,7 +31,7 @@ class Annotation(anwol.AnnotationWithOutLabel):
     TECHNIQUE_NAME_COL = 1
     FRAGMENT_START_COL = 2
     FRAGMENT_END_COL = 3
-    propaganda_techniques = None
+    propaganda_techniques:pt.Propaganda_Techniques = None
 
 
     def __init__(self, label:str=None, start_offset:str = None, end_offset:str=None): 
@@ -42,31 +42,29 @@ class Annotation(anwol.AnnotationWithOutLabel):
 
     def __str__(self):
 
-        return self.get_label() + "\t" + super().__str__()
-        #return "%s\t%d\t%d"%(self.get_label(), self.start_offset, self.end_offset)
+        return super().__str__() + " -> " + self.get_label()
+        #return self.get_label() + "\t" + super().__str__()
 
 
-    #def is_equal_to(self, second_annotation:Annotation, compare_labels:bool=False)->bool:
-    def is_equal_to(self, second_annotation, compare_labels:bool=False)->bool:
+    def __eq__(self, second_annotation:Annotation):
         """
-        Checks whether two annotations are identical. 
-        The parameter <compare_labels> specify whether labels are compared as well
-        """
-        if self.get_start_offset() != second_annotation.get_start_offset() or self.get_end_offset() != second_annotation.get_end_offset():
-            return False
-        if compare_labels and self.get_label() != second_annotation.get_label():
-            return False
-        return True
+        Checks whether two annotations are identical, i.e. if their spans are 
+        identical and if they labels coincide
+        """        
+        return super().__eq__(second_annotation) and self.get_label()==second_annotation.get_label()
 
 
     def get_label(self)->str:
 
         return self.label
 
-
+    
     def get_propaganda_techniques(self)->list:
 
-        return self.propaganda_techniques
+        if self.propaganda_techniques is None:
+            logger.error("trying to access propaganda techniques list before initialising the corresponding object")
+            sys.exit()
+        return self.propaganda_techniques.get_propaganda_techniques_list()
 
     
     @classmethod
@@ -75,16 +73,15 @@ class Annotation(anwol.AnnotationWithOutLabel):
         propaganda_technique_obj is an object from the module src.propaganda_techniques.
         Typical invokation: 
         `
-            propaganda_techniques = pt.Propaganda_Techniques(propaganda_techniques_list_file)
+            propaganda_techniques = pt.Propaganda_Techniques(filename=propaganda_techniques_list_file)
             an.Annotation.set_propaganda_technique_list_obj(propaganda_techniques)
         `
         """
-        cls.propaganda_techniques = propaganda_technique_obj  
+        cls.propaganda_techniques = propaganda_technique_obj
 
 
     @staticmethod
-    #def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None)->(Annotation, str):
-    def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None):
+    def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None)->(Annotation, str):
         """
         Read annotations from a csv-like string, with fields separated
         by the class variable `separator`: 
@@ -127,6 +124,8 @@ class Annotation(anwol.AnnotationWithOutLabel):
         """
         Checks whether the technique names are correct
         """
+        if self.propaganda_techniques is None:
+            sys.exit("ERROR: propaganda techniques object has not been initialised")
         if not self.propaganda_techniques.is_valid_technique(self.get_label()):
             logger.error("label %s is not valid. Possible values are: %s"%(self.get_label(), self.propaganda_techniques))
             return False

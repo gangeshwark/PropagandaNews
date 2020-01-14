@@ -114,3 +114,14 @@ def model_LSTM(embeddingMatrix):
     model = Model([x1], out)
     print(model.summary())
     return model
+
+
+def model_MLP(emb_size, out_size):
+    model = Sequential()
+    model.add(Dense(128, input_dim=emb_size, activation='relu'))
+    model.add(Dropout(0.5))
+    # model.add(Dense(64, activation='relu'))
+    # model.add(Dropout(0.5))
+    model.add(Dense(out_size, activation='softmax'))
+    print(model.summary())
+    return model

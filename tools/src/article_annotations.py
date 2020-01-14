@@ -1,9 +1,11 @@
-#from __future__ import annotations
+from __future__ import annotations
 import sys
+import logging.handlers
+import re
+import os.path
 import src.annotation as ans
 import src.annotation_w_o_label as anwol
 from src.propaganda_techniques import Propaganda_Techniques
-import logging.handlers
 
 __author__ = "Giovanni Da San Martino"
 __copyright__ = "Copyright 2019"
@@ -16,14 +18,13 @@ __status__ = "Beta"
 
 logger = logging.getLogger("propaganda_scorer")
 
-techniques = Propaganda_Techniques()
 
 class Articles_annotations(object):
 
     """
     Class for handling annotations for one article. 
     Articles_annotations is composed of an article id
-    and a list of Annotation objects. 
+    and a list of Annotation (or AnnotationWithOutLabel) objects. 
     """
 
     start_annotation_effect = "\033[42;33m"
@@ -31,9 +32,11 @@ class Articles_annotations(object):
     start_annotation_str = "{"
     end_annotation_str = "}"
     annotation_background_color = "\033[44;33m"
+    inadmissible_annotation_boundary_chars = [ " ", "\n", ".", ",", ":", ";" ]
+    techniques:Propaganda_Techniques = None #Propaganda_Techniques()
 
 
-    def __init__(self, spans:anwol.AnnotationWithOutLabel=None, article_id=None):
+    def __init__(self, spans:anwol.AnnotationWithOutLabel=None, article_id:str=None):
 
         if spans is None:
             self.spans = []
@@ -49,7 +52,7 @@ class Articles_annotations(object):
 
     def __str__(self):
 
-        return "article id: %s\n%s"%(self.article_id, "\n".join(self.spans))
+        return "article id: %s\n%s"%(self.article_id, "\n".join([ "\t" + str(annotation) for annotation in self.spans ]))
 
 
     def add_annotation(self, annotation, article_id:str=None):
@@ -64,7 +67,7 @@ class Articles_annotations(object):
         self.spans.append(annotation)
 
 
-    def add_article_id(self, article_id):
+    def add_article_id(self, article_id:str):
 
         if self.article_id is None:
             self.article_id = article_id
@@ -74,14 +77,197 @@ class Articles_annotations(object):
                 sys.exit()
 
 
-    def get_article_id(self):
+    def _matching_annotations(self, second_annotations:Articles_annotations, i:int)->list(int, int):
+
+            j2 = i
+            while j2<len(second_annotations) and second_annotations[j2].is_span_equal_to(second_annotations[i]):
+                j1 = i
+                while j1<len(self) and self[j1].is_span_equal_to(self[i]):
+                    if self[j1]==second_annotations[j2]:
+                        return j1, j2
+                    j1 += 1
+                j2 += 1
+            return -1, -1
+
+
+    def adapt_annotation_to_new_text(self, original_text:str, new_text:str)->Articles_annotations:
+        """
+        create a copy of the annotations such that they refer to new_text (a slightly modified version of original_text, the text the current annotation refers to). 
+        This function currently assumes that original_text has only additional spaces w.r.t new_text. 
+        """
+        i,j=(0,0)
+        #a_txt = a_txt.replace('\'\'', '"')
+
+        while i<len(original_text) and j<len(new_text):
+            o, n = original_text[i], new_text[j]
+            if n==o or (o in ['"','“','”'] and n in ['"', '“', '”']) \
+                or (o in ['\'','’', '`'] and n in ['\'','’', '`']):
+                i+=1
+                j+=1
+            else:
+                if original_text[i] != " ":
+                    print("different", original_text[i], original_text[i].encode(encoding='UTF-8'), new_text[j])
+                    sys.exit()
+                i+=1                    
+                self.shift_spans(j,-1)                
+
+
+    def align_annotations(self, second_annotations:Articles_annotations)->None:
+        """
+        Reorder all annotations such that the matching between annotations' labels
+        and the ones from second_annotations is maximised. 
+        Annotations are modified in place
+        """
+        i, j1, j2 = 0, 0, 0
+        while i < len(self):
+            #if not self[j].is_span_equal_to(second_annotations[i]): 
+            #    logger.error("trying to align annotations with different spans: %s, %s"%(self[j], second_annotations[i]))
+            #    sys.exit()
+            j1, j2 = self._matching_annotations(second_annotations, i)
+            if j1>i:
+                self.swap_annotations(j1, i)
+            if j2>i:
+                second_annotations.swap_annotations(j2, i)
+            i+=1
+            if j1==-1: # no match, can forward i skipping all annotations with same span
+                while i+1<len(self) and self[i].is_span_equal_to(self[i+1]):
+                    i+=1
+
+
+    def _get_annotation_offset_excluding_chars(self, article_content:str, fragment_index:int, is_starting_fragment:bool):
+
+        new_offset = 0
+        try:
+            while article_content[fragment_index + new_offset + (0 if is_starting_fragment else -1)] in self.inadmissible_annotation_boundary_chars:
+                if is_starting_fragment:
+                    new_offset += 1
+                else: 
+                    new_offset -= 1
+        except:
+            print("accessing char %d+%d+%d=%d of string of len %d"%(fragment_index, new_offset, (0 if is_starting_fragment else -1), fragment_index + new_offset + (0 if is_starting_fragment else -1), len(article_content)))
+            sys.exit()
+        return new_offset
+
+
+    def check_article_annotations_out_of_boundaries(self, article_content:str, fix_errors:bool=False)->list(bool, bool):
+        """
+        Check that all annotations for the article do not reference fragments beyond article length
+        """
+        annotations_correct = True
+        need_saving = False
+        annotations_to_be_removed = []
+        for ann in self.get_article_annotations():
+            if len(article_content) < ann.get_end_offset(): # making sure the offsets of the annotation are within the length of the article content
+                logger.error("trying to access fragment beyond article length: %s, article %s length: %d"%(ann, self.get_article_id(), len(article_content)))
+                if fix_errors:
+                    if ann.get_start_offset() > len(article_content)-1: # the annotation is completely beyond the length of the article
+                        annotations_to_be_removed.append(ann)
+                        #self.remove_annotation(ann)
+                    else:
+                        ann.set_end_offset(len(article_content))
+                    need_saving = True
+                else:
+                    annotations_correct = False
+
+        for ann in annotations_to_be_removed:
+            self.remove_annotation(ann)
+
+        return annotations_correct, need_saving
+
+
+    def check_article_annotations_start_end_chars(self, article_content:str, fix_errors:bool=False)->list(bool, bool):
+        """
+        Check that all annotations for the article do not start or end with any of the characters
+        specified in the class variable `inadmissible_annotation_boundary_chars`. 
+        If fix_errors==True, tries to correct the spans of the wrong annotations.
+        return: annotations_correct (True if the annotations did not have any issue or the issues have been fixed), annotations_need_saving (True if the annotation has been modified and need to be saved)
+        """
+        annotations_need_saving = False
+        annotations_correct = True
+        for ann in self.get_article_annotations():
+            # check that the annotation does not start or end with an inadmissible char
+            new_start_offset = self._get_annotation_offset_excluding_chars(article_content, ann.get_start_offset(), True)
+            new_end_offset = self._get_annotation_offset_excluding_chars(article_content, ann.get_end_offset(), False)
+            if new_start_offset != 0 or new_end_offset != 0:
+                logger.error('annotation %s in article %s starts or ends with inadmissible characters: -%s-'%(ann, self.get_article_id(), article_content[ann.get_start_offset():ann.get_end_offset()]))
+                annotations_correct = False
+                if fix_errors:
+                    ann.set_start_offset(ann.get_start_offset() + new_start_offset)
+                    ann.set_end_offset(ann.get_end_offset() + new_end_offset)
+                    if not ann.is_span_valid():
+                        logger.error("impossible to fix annotation")
+                        sys.exit()
+                    else:
+                        annotations_correct = True
+                        annotations_need_saving = True
+                
+        return annotations_correct, annotations_need_saving
+
+
+    def check_article_annotations_no_duplicated_annotations(self,article_content:str, fix_errors:bool=False)->bool:
+        """
+        Check that there are no two duplicated annotations. If there are such annotations and if they have identical labels, one is removed and the annotation is considered correct
+        """
+        annotations_correct = True
+        annotations_need_saving = False
+        for i, ann in enumerate(self.get_article_annotations()):
+            # check that the annotation is not identical to any other annotation of the same article
+            j = i + 1
+            while j < len(self.get_article_annotations()):
+                if ann.is_span_equal_to(self[j]):
+                    logger.error("article %s found two identical annotations: %s and %s"%(self.get_article_id(), ann, self[j]))
+                    if ann.get_label()==self[j].get_label() and fix_errors:
+                        self.remove_annotation(self[j])
+                        logger.debug("The two annotations have identical labels (%s, %s), deleted one."%(ann, self[j]))
+                        annotations_need_saving = True
+                j += 1
+        return annotations_correct, annotations_need_saving
+
+
+    def check_article_annotations(self, article_content:str, fix_errors:bool=False, 
+                                  check_out_of_boundaries=False, check_start_end_chars=False, check_duplicated_annotations=False)->bool:
+        """
+        Performs the following checks on the annotations of the article:
+        1) check that an annotation does not reference a location in article_content beyond its length
+        2) check that an annotation does not start or end with a space, a full stop or a newline character. 
+        3) there are no two annotations with identical spans 
+
+        return value: annotations_correct (True if the annotations did not have any issue or the issues have been fixed), 
+                      annotations_need_saving (True if the annotation has been modified and need to be saved)
+        """
+
+        annotations_correct, annotations_need_saving = True, False
+
+        if check_out_of_boundaries:
+            annotations_correct, annotations_need_saving = self.check_article_annotations_out_of_boundaries(article_content, fix_errors)
+
+        if check_start_end_chars:
+            start_end_chars_correct, need_saving = self.check_article_annotations_start_end_chars(article_content, fix_errors)
+            annotations_correct = annotations_correct and start_end_chars_correct
+            annotations_need_saving = annotations_need_saving or need_saving
+
+        if check_duplicated_annotations:
+            no_dup_annotations, dup_annotations_need_saving = self.check_article_annotations_no_duplicated_annotations(article_content, fix_errors)
+            annotations_need_saving = annotations_need_saving or dup_annotations_need_saving
+            annotations_correct = annotations_correct and no_dup_annotations
+
+        return annotations_correct, annotations_need_saving
+
+
+    def get_article_id(self)->str:
 
         return self.article_id
 
 
-    def get_article_annotations(self):
-
+    def get_article_annotations(self)->list(anwol.AnnotationWithOutLabel):
+        """
+        returns a list of AnnotationWithoutLabel objects
+        """
         return self.spans
+
+        
+    def __getitem__(self, index):
+        return self.spans[index]
 
 
     def get_markers_from_spans(self):
@@ -161,15 +347,16 @@ class Articles_annotations(object):
             return self.markers[marker_index][3] == "end"
 
 
-    def load_article_annotations_from_csv_file(self, filename):
+    def load_article_annotations_from_csv_file(self, filename:str, annotation_class=ans.Annotation):
         """
-        Read annotations from a csv file and creates a list of
-        Annotation objects. Check class annotation for details
-        on the file format.
+        Read annotations from a csv file and add the annotations 
+        found in the file as a list of Annotation objects. 
+        Check class Annotation for details on the format of the file.
         """
         with open(filename, "r") as f:
             for i, line in enumerate(f.readlines(), 1):
-                an, article_id = ans.Annotation.load_annotation_from_string(line.rstrip(), i, filename)
+                #an, article_id = ans.Annotation.load_annotation_from_string(line.rstrip(), i, filename)
+                an, article_id = annotation_class.load_annotation_from_string(line.rstrip(), i, filename)
                 self.add_annotation(an, article_id)
 
 
@@ -212,6 +399,11 @@ class Articles_annotations(object):
         """
 
         self.get_markers_from_spans()
+        if Articles_annotations.techniques is None:
+            if ans.Annotation.propaganda_techniques is None:
+                Articles_annotations.techniques = Propaganda_Techniques()
+            else:   
+                Articles_annotations.techniques = ans.Annotation.propaganda_techniques
 
         output_text, curr_output_text_index, self.curr_marker = ("", 0, 0)
         footnotes = "List of techniques found in the article\n\n"
@@ -230,7 +422,7 @@ class Articles_annotations(object):
                         output_text += "%s%s%s" % (
                             self.end_annotation_effect, "" if len(annotations_stack) > 1 else " ",
                             self.start_annotation_effect)
-                    techniques_index = techniques.indexOf(self.marker_label())
+                    techniques_index = Articles_annotations.techniques.indexOf(self.marker_label())
                     output_text += str(techniques_index)
                     techniques_found.add(techniques_index)
                     if self.is_ending_marker():
@@ -261,7 +453,7 @@ class Articles_annotations(object):
                    self.end_annotation_str, self.end_annotation_effect)
 
         for technique_index in sorted(techniques_found):
-            footnotes += "%d: %s\n" % (technique_index, techniques[technique_index])
+            footnotes += "%d: %s\n" % (technique_index, Articles_annotations.techniques.get_technique(technique_index))
 
         return output_text, footnotes, legend
 
@@ -287,7 +479,7 @@ class Articles_annotations(object):
 
     def technique_index_from_annotation_index(self, x:int)->int:
 
-        return techniques.indexOf(self.marker_label(self.annotation_stack_index_to_markers_index(x)))
+        return self.techniques.indexOf(self.marker_label(self.annotation_stack_index_to_markers_index(x)))
 
 
     def start_annotation_marker_function(self, annotations_stack:list, marker_index:int, row_counter:int)->str:
@@ -307,14 +499,14 @@ class Articles_annotations(object):
             new_annotations_stack = annotations_stack[ annotations_stack.index(self.marker_annotation()): ]
             res = "".join([ "</span>" for x in new_annotations_stack ]) # closing all tags opened that are supposed to continue after </t2>
             new_annotations_stack.remove(self.marker_annotation()) # removing </t1> from annotations_stack copy 
-            technique_index = techniques.indexOf(self.marker_label(marker_index))
+            technique_index = self.techniques.indexOf(self.marker_label(marker_index))
             res += '<sup id="row%dannotation%d" class="technique%d">%d</sup>'%(row_counter, self.marker_annotation(), technique_index, technique_index)
             for x in new_annotations_stack:
                 new_annotations_stack.remove(x) # self.start_annotation_marker_function() assumes x is not in the annotations_stack variable passed as parameter
                 res += self.start_annotation_marker_function(new_annotations_stack, self.annotation_stack_index_to_markers_index(x), row_counter) 
             return res
         else: # end of non-overlapping technique
-            technique_index = techniques.indexOf(self.marker_label(marker_index))
+            technique_index = self.techniques.indexOf(self.marker_label(marker_index))
             return '</span><sup id="row%dannotation%d" class="technique%d">%d</sup>'%(row_counter, self.marker_annotation(), technique_index, technique_index) 
 
 
@@ -330,6 +522,12 @@ class Articles_annotations(object):
                 legend description of the marks added
         """
 
+        if Articles_annotations.techniques is None:
+            if ans.Annotation.propaganda_techniques is None:
+                Articles_annotations.techniques = Propaganda_Techniques()
+            else:   
+                Articles_annotations.techniques = ans.Annotation.propaganda_techniques
+
         self.get_markers_from_spans()
 
         output_text, curr_output_text_index, self.curr_marker = ("", 0, 0)
@@ -343,7 +541,7 @@ class Articles_annotations(object):
                 curr_output_text_index = len(original_text)
             else: # more markers have to be added to the content string
                 if self.marker_position() <= curr_output_text_index: # it is time to add a marker
-                    techniques_index = techniques.indexOf(self.marker_label())
+                    techniques_index = self.techniques.indexOf(self.marker_label())
                     techniques_found.add(techniques_index)
                     if self.is_starting_marker():
                         output_text += self.start_annotation_marker_function(annotations_stack, self.curr_marker, row_counter)
@@ -364,7 +562,7 @@ class Articles_annotations(object):
 
         footnotes = "\n<div>List of techniques found in the article</div>\n\n"
         for technique_index in sorted(techniques_found):
-            footnotes += "<div>%d: %s</div>\n" % (technique_index, techniques[technique_index])
+            footnotes += "<div>%d: %s</div>\n" % (technique_index, self.techniques.get_technique(technique_index))
 
         return final_text, footnotes
 
@@ -400,6 +598,21 @@ class Articles_annotations(object):
                 return True
 
         return False
+
+
+    def get_spans_content(self, article_content:str)->str: 
+        """
+        Given an article content as a string, prints the spans covered by the current annotations
+        """
+        s = ""
+        for annotation in self.get_article_annotations():
+            s += article_content[annotation.get_start_offset():annotation.get_end_offset()] + "\n"
+        return s
+
+
+    def remove_annotation(self, annotation_to_be_deleted:anwol.AnnotationWithOutLabel):
+
+        self.get_article_annotations().remove(annotation_to_be_deleted)
 
 
     def remove_empty_annotations(self):
@@ -488,4 +701,11 @@ class Articles_annotations(object):
         sort the list of annotations with respect to the starting offset
         """
         self.spans = sorted(self.spans, key=lambda span: span.get_start_offset() )
+
+
+    def swap_annotations(self, i:int, j:int)->None:
+        """
+        Swap the i-th and j-th annotations 
+        """
+        self.spans[i], self.spans[j] = self.spans[j], self.spans[i]
 

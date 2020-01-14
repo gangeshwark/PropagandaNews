@@ -1,5 +1,5 @@
 
-Scorers for the Propaganda Techniques Corpus
+Scorers for the Propaganda Techniques Corpus Version 2
 
 Contents
 
@@ -8,6 +8,7 @@ Contents
 3. Data format
 4. Tools
 5. Citation 
+6. Changes from version 1 
 
 
 Tasks
@@ -119,13 +120,11 @@ Tools
 
 - The script print_spans.py highlights the annotations in an article.
 
-python3 print_spans.py -s [annotations_file] -t [article_file] -l
-
-The -l options prints also line numbers of the article
+python3 print_spans.py -s [annotations_file] -t [article_file] -p [propaganda_techniques_file]
 
 For example:
 
-python3 print_spans.py -t data/article736757214.txt -s data/article736757214.labels-task-TC
+python3 print_spans.py -t data/article736757214.txt -s data/article736757214.labels-task-TC -p data/propaganda-techniques-names-semeval2020task11.txt
 
 
 Citation 
@@ -148,3 +147,12 @@ year = {2019},
 address = {Hong Kong, China},
 month = {November},
 }
+
+
+Changes from version 1
+--------------------------------------------
+
+Fixed a bug in the evaluation function for task TC that prevented to find the best alignment between the labels of identical spans in certain cases.
+
+Now print_spans.py has a parameter -p specifying the file with the list of propaganda techniques
+

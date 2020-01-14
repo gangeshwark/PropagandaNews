@@ -42,9 +42,13 @@ def main(args):
 
     user_annotations = ans.Annotations()
     user_annotations.load_annotation_list_from_file(user_submission_file)
+    for article in user_annotations.get_article_id_list():
+        user_annotations.get_article_annotations_obj(article).sort_spans()
 
     gold_annotations = ans.Annotations()
     gold_annotations.load_annotation_list_from_file(gold_file)
+    for article in gold_annotations.get_article_id_list():
+        gold_annotations.get_article_annotations_obj(article).sort_spans()
 
     logger.info("Checking format: User Predictions -- Gold Annotations")
     if not user_annotations.compare_annotations_identical_article_lists(gold_annotations) or not user_annotations.compare_annotations_identical(gold_annotations):

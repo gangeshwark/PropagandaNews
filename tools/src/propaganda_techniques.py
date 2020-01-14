@@ -34,5 +34,9 @@ class Propaganda_Techniques():
         return self.techniques[index]
 
 
+    def get_technique(self, index):
+        return self.techniques[index]
+
+
     def indexOf(self, technique_name):
         return self.techniques.index(technique_name)

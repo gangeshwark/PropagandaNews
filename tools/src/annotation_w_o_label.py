@@ -1,4 +1,4 @@
-#from __future__ import annotations
+from __future__ import annotations
 import sys
 import src.propaganda_techniques as pt
 import logging.handlers
@@ -38,17 +38,22 @@ class AnnotationWithOutLabel(object):
 
     def __str__(self):
 
-        return "%d\t%d"%(self.start_offset, self.end_offset)
+        return "[%d, %d]"%(self.start_offset, self.end_offset)
+        #return "%d\t%d"%(self.start_offset, self.end_offset)
 
 
-    #def is_equal_to(self, second_annotation:AnnotationWithOutLabel)->bool:
-    def is_equal_to(self, second_annotation)->bool:
+    def is_span_equal_to(self, second_annotation:AnnotationWithOutLabel)->bool:
         """
-        Checks whether two annotations are identical. 
+        Checks whether two annotations are identical, i.e. whether the two spans are identical. 
         """
         if self.get_start_offset() != second_annotation.get_start_offset() or self.get_end_offset() != second_annotation.get_end_offset():
             return False
         return True
+
+
+    def __eq__(self, second_annotation:AnnotationWithOutLabel):
+        
+        return self.is_span_equal_to(second_annotation)
 
 
     def get_start_offset(self)->int:
@@ -69,8 +74,7 @@ class AnnotationWithOutLabel(object):
 
     
     @staticmethod
-    #def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None)->(AnnotationWithOutLabel, str):
-    def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None):
+    def load_annotation_from_string(annotation_string:str, row_num:int=None, filename:str=None)->(AnnotationWithOutLabel, str):
         """
         Read annotations from a csv-like string, with fields separated
         by the class variable `separator`: 
@@ -107,8 +111,7 @@ class AnnotationWithOutLabel(object):
         return AnnotationWithOutLabel(start_offset, end_offset), article_id
 
 
-    #def merge_spans(self, second_annotation:AnnotationWithOutLabel)->None:
-    def merge_spans(self, second_annotation)->None:
+    def merge_spans(self, second_annotation:AnnotationWithOutLabel)->None:
         """
         Merge the spans of two annotations. The function does not check whether the spans overlap. 
 
@@ -135,14 +138,15 @@ class AnnotationWithOutLabel(object):
         self.set_end_offset(self.get_end_offset() + offset)
         
 
-    #def span_overlapping(self, second_annotation:AnnotationWithOutLabel)->bool:
-    def span_overlapping(self, second_annotation)->bool:
+    def span_overlapping(self, second_annotation:AnnotationWithOutLabel)->bool:
         return len(self.get_span().intersection(second_annotation.get_span())) > 0
 
 
     def is_span_valid(self)->bool:
         """
-        Checks whether the span is valid
+        Checks whether the span is valid, i.e. if the following conditions are met: 
+        1) start and end offsets >= 0 
+        2) start offset < end offset
         """
         if self.get_start_offset() < 0 or self.get_end_offset() < 0:
             logger.error("Start and end of position of the fragment must be non-negative: %d, %d"
