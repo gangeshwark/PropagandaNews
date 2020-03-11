@@ -1,0 +1,4 @@
+bert-serving-start -model_dir /data/gangeshwark/bert_models/cased_L-24_H-1024_A-16 -num_worker=4 -max_seq_len 64 -pooling_layer -4 -3 -2 -1
+bert-serving-start -model_dir /data/gangeshwark/bert_models/uncased_L-24_H-1024_A-16 -num_worker=4 -max_seq_len 128 -pooling_layer -4 -3 -2 -1 -pooling_strategy REDUCE_MEAN_MAX
+bert-serving-start -model_dir /data/gangeshwark/bert_models/uncased_L-24_H-1024_A-16 -num_worker=4 -max_seq_len 128 -pooling_layer -24 -23 -22 -4 -3 -2 -pooling_strategy REDUCE_MEAN_MAX
+bert-serving-start -model_dir /data/gangeshwark/bert_models/uncased_L-24_H-1024_A-16 -num_worker=4 -max_seq_len 128 -pooling_layer -24 -23 -3 -2
